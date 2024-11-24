@@ -14,6 +14,9 @@ class PieceTable:
         :param position: Index in the document where text is inserted.
         :param text: The text to insert.
         """
+        print(f"Inserting '{text}' at position {position}...")
+        print(f"Before insertion, pieces: {self.pieces}")
+
         if position < 0 or position > self.length():
             raise ValueError("Insert position out of bounds")
 
@@ -22,13 +25,14 @@ class PieceTable:
 
         new_pieces = []
         offset = 0
+        inserted = False  # Flag to track if the insertion is completed
 
         for source, start, length in self.pieces:
-            if offset + length < position:
-                # Current piece is completely before the insertion
+            if offset + length <= position:
+                # Current piece is entirely before the insertion point
                 new_pieces.append((source, start, length))
                 offset += length
-            else:
+            elif not inserted:
                 # Split the piece where the insertion occurs
                 before_len = position - offset
                 after_len = length - before_len
@@ -39,9 +43,20 @@ class PieceTable:
                 if after_len > 0:
                     new_pieces.append((source, start + before_len, after_len))
 
-                offset += length  # Ensure we move through the piece table
+                inserted = True  # Mark insertion as complete
+                offset += length
+            else:
+                # Add remaining pieces after the insertion point
+                new_pieces.append((source, start, length))
+
+        # If insertion occurs at the very end, add the new piece
+        if not inserted:
+            new_pieces.append(("add", add_start, len(text)))
 
         self.pieces = new_pieces
+
+        print(f"After insertion, pieces: {self.pieces}")
+        print(f"Current content: {self.get_content()}")
 
     def delete(self, position, length):
         """
@@ -49,6 +64,9 @@ class PieceTable:
         :param position: Index where deletion starts.
         :param length: Number of characters to delete.
         """
+        print(f"Deleting {length} characters at position {position}...")
+        print(f"Before deletion, pieces: {self.pieces}")
+
         if position < 0 or position + length > self.length():
             raise ValueError("Delete range out of bounds")
 
@@ -73,6 +91,9 @@ class PieceTable:
 
         self.pieces = new_pieces
 
+        print(f"After deletion, pieces: {self.pieces}")
+        print(f"Current content: {self.get_content()}")
+
     def length(self):
         """Return the total length of the document."""
         return sum(piece[2] for piece in self.pieces)
@@ -88,4 +109,7 @@ class PieceTable:
                 content.append(self.original_buffer[start:start + length])
             elif source == "add":
                 content.append(self.add_buffer[start:start + length])
-        return "".join(content)
+
+        result = "".join(content)
+        print(f"Constructed content: {result}")
+        return result

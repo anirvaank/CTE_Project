@@ -38,7 +38,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'editor',
-    'channels',
+    'channels'
 ]
 
 ASGI_APPLICATION = 'collaborative_editor.asgi.application'
@@ -66,8 +66,8 @@ ROOT_URLCONF = 'collaborative_editor.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
-        'APP_DIRS': True,
+        'DIRS': [BASE_DIR / "templates"],  # You can specify global templates here
+        'APP_DIRS': True,  # Looks for templates in each app's templates directory
         'OPTIONS': {
             'context_processors': [
                 'django.template.context_processors.debug',
@@ -78,6 +78,7 @@ TEMPLATES = [
         },
     },
 ]
+
 
 WSGI_APPLICATION = 'collaborative_editor.wsgi.application'
 

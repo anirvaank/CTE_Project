@@ -2,12 +2,17 @@ from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
 from django.shortcuts import get_object_or_404
 from .models import Document
+from .piece_table import PieceTable
+from .operational_transform import OperationalTransform
 import json
+
+# Initialize the OT system
+ot_system = OperationalTransform()
 
 @csrf_exempt
 def create_document(request):
     """
-    API to create a new document.
+    API to create a new document with Piece Table integration.
     """
     if request.method == "POST":
         try:
@@ -22,26 +27,42 @@ def create_document(request):
         if Document.objects.filter(name=name).exists():
             return JsonResponse({"error": "Document already exists"}, status=400)
 
-        doc = Document.objects.create(name=name, content="")
-        return JsonResponse({"message": "Document created", "id": doc.id, "name": doc.name})
+        # Initialize the Piece Table for the new document
+        piece_table = PieceTable()
+
+        # Save the document in the database
+        doc = Document.objects.create(name=name, content=piece_table.get_content())
+
+        return JsonResponse({
+            "message": "Document created",
+            "id": doc.id,
+            "name": doc.name,
+            "content": doc.content
+        })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
-# @csrf_exempt
-# def fetch_document(request, document_id):
-#     """
-#     API to fetch the content of a document by ID.
-#     """
-#     if request.method == "GET":
-#         doc = get_object_or_404(Document, id=document_id)
-#         return JsonResponse({"id": doc.id, "name": doc.name, "content": doc.content})
 
-#     return JsonResponse({"error": "Method not allowed"}, status=405)
+@csrf_exempt
+def fetch_document(request, document_id):
+    """
+    API to fetch the content of a document by ID.
+    """
+    if request.method == "GET":
+        doc = get_object_or_404(Document, id=document_id)
+        return JsonResponse({
+            "id": doc.id,
+            "name": doc.name,
+            "content": doc.content
+        })
+
+    return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
 @csrf_exempt
 def update_document(request, document_id):
     """
-    API to update a document using insert or delete operations.
+    API to update a document using Piece Table and Operational Transform.
     """
     if request.method == "POST":
         doc = get_object_or_404(Document, id=document_id)
@@ -53,102 +74,55 @@ def update_document(request, document_id):
         operation = data.get("operation")
         position = data.get("position")
 
+        # Retrieve the document's Piece Table
+        piece_table = PieceTable(initial_text=doc.content)
+
         if operation == "insert":
             text = data.get("text")
-            doc.content = doc.content[:position] + text + doc.content[position:]
+            if text is None:
+                return JsonResponse({"error": "Text is required for insert"}, status=400)
+
+            # Apply the operation via OT
+            op = {"type": "insert", "position": position, "text": text}
+            for existing_op in ot_system.operations:
+                op = ot_system.transform(op, existing_op)
+
+            ot_system.apply(piece_table, op)
         elif operation == "delete":
             length = data.get("length")
-            doc.content = doc.content[:position] + doc.content[position + length:]
+            if length is None:
+                return JsonResponse({"error": "Length is required for delete"}, status=400)
+
+            # Apply the operation via OT
+            op = {"type": "delete", "position": position, "length": length}
+            for existing_op in ot_system.operations:
+                op = ot_system.transform(op, existing_op)
+
+            ot_system.apply(piece_table, op)
         else:
             return JsonResponse({"error": "Invalid operation"}, status=400)
 
+        # Save the updated content back to the database
+        doc.content = piece_table.get_content()
         doc.save()
+
         return JsonResponse({"message": "Document updated", "content": doc.content})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
-from django.http import JsonResponse
-from .models import Document
 
-def list_documents(request):
-    if request.method == "GET":
-        documents = Document.objects.all()
-        data = [{"id": doc.id, "name": doc.name, "last_modified": doc.last_modified} for doc in documents]
-        return JsonResponse({"documents": data})
-
-    return JsonResponse({"error": "Method not allowed"}, status=405)
-
-def fetch_document(request, document_id):
-    if request.method == "GET":
-        doc = get_object_or_404(Document, id=document_id)
-        return JsonResponse({"id": doc.id, "name": doc.name, "content": doc.content})
-
-from django.http import JsonResponse
-from django.shortcuts import render
-from .models import Document
-
-def editor_home(request):
-    """
-    View to display all documents or a welcome message at /editor/.
-    """
-    if request.method == "GET":
-        # Option 1: Render a welcome message
-        # return JsonResponse({"message": "Welcome to the Editor API"})
-
-        # Option 2: Display all documents
-        documents = Document.objects.all()
-        data = [{"id": doc.id, "name": doc.name, "last_modified": doc.last_modified} for doc in documents]
-        return JsonResponse({"documents": data})
-
-    return JsonResponse({"error": "Method not allowed"}, status=405)
-
-
-from django.shortcuts import render, get_object_or_404
-from .models import Document
-
-def document_detail(request, document_id):
-    """
-    Fetch and render a specific document.
-    """
-    # Fetch the document from the database or return a 404 if not found
-    doc = get_object_or_404(Document, id=document_id)
-    
-    # Render the document in the template
-    return render(request, "editor/document_detail.html", {"document": doc})
-
-from django.shortcuts import render
-from .models import Document
-
+@csrf_exempt
 def list_documents(request):
     """
-    View to list all documents.
-    """
-    documents = Document.objects.all()  # Fetch all documents from the database
-    return render(request, "editor/document_list.html", {"documents": documents})
-
-from django.http import JsonResponse
-from django.shortcuts import get_object_or_404
-
-def fetch_document(request, document_id):
-    """
-    API view to fetch a specific document by ID.
+    API to list all documents.
     """
     if request.method == "GET":
-        document = get_object_or_404(Document, id=document_id)
+        documents = Document.objects.all()
         return JsonResponse({
-            "id": document.id,
-            "name": document.name,
-            "content": document.content,
-            "last_modified": document.last_modified,
+            "documents": [
+                {"id": doc.id, "name": doc.name, "last_modified": doc.last_modified.isoformat()}
+                for doc in documents
+            ]
         })
-from django.shortcuts import render, get_object_or_404
 
-from django.shortcuts import render, get_object_or_404
-from .models import Document
-
-def document_detail(request, document_id):
-    """
-    View to render the details of a specific document.
-    """
-    document = get_object_or_404(Document, id=document_id)
-    return render(request, "editor/document_detail.html", {"document": document})
+    return JsonResponse({"error": "Method not allowed"}, status=405)

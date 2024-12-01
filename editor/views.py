@@ -1,19 +1,13 @@
 from django.http import JsonResponse
 from django.views.decorators.csrf import csrf_exempt
-from django.shortcuts import get_object_or_404
 from .models import Document
 from .piece_table import PieceTable
-from .operational_transform import OperationalTransform
 import json
+from .operational_transform import OperationalTransform
 
-# Initialize the OT system
-ot_system = OperationalTransform()
 
 @csrf_exempt
 def create_document(request):
-    """
-    API to create a new document with Piece Table integration.
-    """
     if request.method == "POST":
         try:
             data = json.loads(request.body)
@@ -27,20 +21,15 @@ def create_document(request):
         if Document.objects.filter(name=name).exists():
             return JsonResponse({"error": "Document already exists"}, status=400)
 
-        # Initialize the Piece Table for the new document
+        # Create a new Piece Table
         piece_table = PieceTable()
+        doc = Document(name=name)
+        doc.save_piece_table(piece_table)
 
-        # Save the document in the database
-        doc = Document.objects.create(name=name, content=piece_table.get_content())
-
-        return JsonResponse({
-            "message": "Document created",
-            "id": doc.id,
-            "name": doc.name,
-            "content": doc.content
-        })
+        return JsonResponse({"message": "Document created", "id": doc.id, "name": doc.name})
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
 
 
 @csrf_exempt
@@ -59,54 +48,48 @@ def fetch_document(request, document_id):
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
 
+
 @csrf_exempt
 def update_document(request, document_id):
     """
-    API to update a document using Piece Table and Operational Transform.
+    API to update a document using insert or delete operations with OT and Piece Table integration.
     """
     if request.method == "POST":
-        doc = get_object_or_404(Document, id=document_id)
         try:
+            doc = get_object_or_404(Document, id=document_id)
             data = json.loads(request.body)
-        except json.JSONDecodeError:
-            return JsonResponse({"error": "Invalid JSON"}, status=400)
+            operation = data.get("operation")
+            position = data.get("position")
+            ot = OperationalTransform()
 
-        operation = data.get("operation")
-        position = data.get("position")
+            # Extract operation
+            if operation == "insert":
+                text = data.get("text")
+                new_op = {"type": "insert", "position": position, "text": text}
+            elif operation == "delete":
+                length = data.get("length")
+                new_op = {"type": "delete", "position": position, "length": length}
+            else:
+                return JsonResponse({"error": "Invalid operation"}, status=400)
 
-        # Retrieve the document's Piece Table
-        piece_table = PieceTable(initial_text=doc.content)
+            # Apply transformation for each operation in the log
+            for existing_op in ot.operations:  # Ensure this is iterating over dictionaries
+                new_op = ot.transform(new_op, existing_op)
 
-        if operation == "insert":
-            text = data.get("text")
-            if text is None:
-                return JsonResponse({"error": "Text is required for insert"}, status=400)
+            # Apply the final transformed operation to the Piece Table
+            piece_table = PieceTable(doc.content)
+            ot.apply(piece_table, new_op)
 
-            # Apply the operation via OT
-            op = {"type": "insert", "position": position, "text": text}
-            for existing_op in ot_system.operations:
-                op = ot_system.transform(op, existing_op)
+            # Update document in the database
+            doc.content = piece_table.get_content()
+            doc.save()
 
-            ot_system.apply(piece_table, op)
-        elif operation == "delete":
-            length = data.get("length")
-            if length is None:
-                return JsonResponse({"error": "Length is required for delete"}, status=400)
+            # Log the operation
+            ot.operations.append(new_op)
 
-            # Apply the operation via OT
-            op = {"type": "delete", "position": position, "length": length}
-            for existing_op in ot_system.operations:
-                op = ot_system.transform(op, existing_op)
-
-            ot_system.apply(piece_table, op)
-        else:
-            return JsonResponse({"error": "Invalid operation"}, status=400)
-
-        # Save the updated content back to the database
-        doc.content = piece_table.get_content()
-        doc.save()
-
-        return JsonResponse({"message": "Document updated", "content": doc.content})
+            return JsonResponse({"message": "Document updated", "content": doc.content})
+        except Exception as e:
+            return JsonResponse({"error": str(e)}, status=500)
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
 
@@ -126,3 +109,13 @@ def list_documents(request):
         })
 
     return JsonResponse({"error": "Method not allowed"}, status=405)
+
+from django.shortcuts import render, get_object_or_404
+from .models import Document
+
+def document_detail(request, document_id):
+    """
+    Render the document content for viewing.
+    """
+    document = get_object_or_404(Document, id=document_id)
+    return render(request, "editor/document_detail.html", {"document": document})

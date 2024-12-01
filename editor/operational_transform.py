@@ -1,47 +1,45 @@
 class OperationalTransform:
     def __init__(self):
-        self.operations = []  # Log of operations
+        self.operations = []  # Log of operations (must store dictionaries)
 
     def transform(self, new_op, existing_op):
         """
         Transform a new operation against an existing operation.
         :param new_op: The new operation (insert or delete).
-        :param existing_op: An already-applied operation.
+        :param existing_op: An already-applied operation (must be a dictionary).
         :return: Transformed operation.
         """
+        if not isinstance(new_op, dict) or not isinstance(existing_op, dict):
+            raise TypeError("Operations must be dictionaries")
+
+        # Insert vs Insert
         if new_op["type"] == "insert" and existing_op["type"] == "insert":
             if new_op["position"] <= existing_op["position"]:
-                # No adjustment needed
                 return new_op
             else:
-                # Shift the new insertion to the right
                 new_op["position"] += len(existing_op["text"])
 
+        # Insert vs Delete
         elif new_op["type"] == "insert" and existing_op["type"] == "delete":
             if new_op["position"] <= existing_op["position"]:
-                # No adjustment needed
                 return new_op
             elif new_op["position"] < existing_op["position"] + existing_op["length"]:
-                # Split the insertion (conflict resolution)
                 raise ValueError("Insert inside delete conflict")
             else:
-                # Shift the new insertion left
                 new_op["position"] -= existing_op["length"]
 
+        # Delete vs Insert
         elif new_op["type"] == "delete" and existing_op["type"] == "insert":
             if new_op["position"] >= existing_op["position"]:
-                # Shift the delete right
                 new_op["position"] += len(existing_op["text"])
             elif new_op["position"] + new_op["length"] >= existing_op["position"]:
-                # Adjust delete length
                 new_op["length"] -= len(existing_op["text"])
 
+        # Delete vs Delete
         elif new_op["type"] == "delete" and existing_op["type"] == "delete":
             if new_op["position"] >= existing_op["position"]:
-                # Shift delete left
                 new_op["position"] -= existing_op["length"]
             elif new_op["position"] + new_op["length"] > existing_op["position"]:
-                # Adjust delete length
                 overlap = (new_op["position"] + new_op["length"]) - existing_op["position"]
                 new_op["length"] -= overlap
 
@@ -49,14 +47,15 @@ class OperationalTransform:
 
     def apply(self, piece_table, op):
         """
-        Apply an operation to the PieceTable.
-        :param piece_table: The PieceTable instance.
+        Apply an operation to the Piece Table.
+        :param piece_table: The Piece Table instance.
         :param op: The operation (insert or delete).
         """
+        if not isinstance(op, dict):
+            raise TypeError("Operation must be a dictionary")
         if op["type"] == "insert":
             piece_table.insert(op["position"], op["text"])
         elif op["type"] == "delete":
             piece_table.delete(op["position"], op["length"])
 
-        # Log the operation
-        self.operations.append(op)
+        self.operations.append(op)  # Ensure only dictionaries are added

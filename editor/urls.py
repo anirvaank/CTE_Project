@@ -6,4 +6,6 @@ urlpatterns = [
     path("<int:document_id>/", views.fetch_document, name="fetch_document"),  # Fetch a specific document
     path("create/", views.create_document, name="create_document"),  # Create a document
     path("<int:document_id>/update/", views.update_document, name="update_document"),  # Update a document
+    path("<int:document_id>/view/", views.document_detail, name="document_detail"),
+
 ]
